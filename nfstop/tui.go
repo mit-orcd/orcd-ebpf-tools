@@ -29,6 +29,13 @@ var baseStyle = lipgloss.NewStyle().
 	BorderStyle(lipgloss.NormalBorder()).
 	BorderForeground(lipgloss.Color("240"))
 
+type DisplayMode int
+
+const (
+	DisplayTotals DisplayMode = iota
+	DisplayRates
+)
+
 type model struct {
 	user_table    table.Model
 	traffic_table table.Model
@@ -37,6 +44,7 @@ type model struct {
 	width         int
 	height        int
 	help          help.Model
+	displayMode   DisplayMode
 }
 
 type updateTickMsg time.Time
@@ -53,10 +61,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch msg := msg.(type) {
 	case updateTickMsg:
-		m.sw.total_summary.UpdateMetrics(m.objs.NfsOpsCounts)
+		m.sw.UpdateMetrics(m.objs.NfsOpsCounts)
 		// m.updateTables()
 		m.updateUserTable()
-		// Check the cursor location 
+		// Check the cursor location
 		if m.user_table.Focused() {
 			idx := m.user_table.Cursor()
 			if idx >= 0 && len(m.sw.total_summary.ordered_users) > 0 {
@@ -69,6 +77,20 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 	case tea.KeyMsg:
 		switch msg.String() {
+		case "t":
+			if m.displayMode == DisplayTotals {
+				m.displayMode = DisplayRates
+			} else {
+				m.displayMode = DisplayTotals
+			}
+			m.updateUserTable()
+			if m.user_table.Focused() {
+				idx := m.user_table.Cursor()
+				if idx >= 0 && len(m.sw.total_summary.ordered_users) > 0 {
+					uid := m.sw.total_summary.ordered_users[idx].uid
+					m.updateTrafficTableWithIP(uid)
+				}
+			}
 		case "esc", "tab":
 			if m.user_table.Focused() {
 				m.user_table.Blur()
@@ -106,8 +128,12 @@ func (m *model) View() string {
 	right := baseStyle.Render(m.traffic_table.View())
 	joint := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
+	modeLabel := "totals"
+	if m.displayMode == DisplayRates {
+		modeLabel = "rates"
+	}
 	helpView := m.help.ShortHelpView(m.user_table.KeyMap.ShortHelp())
-	return joint + "\n" + helpView + "\n"
+	return joint + "\n" + helpView + fmt.Sprintf("  • t: toggle mode [%s]", modeLabel) + "\n"
 }
 
 func bubble_render(sw *SlidingWindow, objs *collectorObjects) {
@@ -118,8 +144,8 @@ func bubble_render(sw *SlidingWindow, objs *collectorObjects) {
 		w, h = 80, 25
 	}
 
-	user_columns := makeUserColumns(w)
-	traffic_columns := makeTrafficColumnsWithIP(w)
+	user_columns := makeUserColumns(w, DisplayTotals)
+	traffic_columns := makeTrafficColumnsWithIP(w, DisplayTotals)
 
 	rows := []table.Row{
 		// {"1", "test", "1", "4096", "31", "51283491", "path"},
