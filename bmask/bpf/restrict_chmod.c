@@ -11,6 +11,10 @@ char __license[] SEC("license") = "GPL";
 // modified from userspace by setting env var BMASK
 const volatile __u32 bmask = 0007;
 
+// list of allowed uids that can always use chmod
+const __u32 whitelist[] = {0}; // modify as needed
+#define ALLOWED_COUNT (sizeof(whitelist) / sizeof(whitelist[0]))
+
 /*
  * Deny chmod/fchmod/fchmodat attempts that set permission bits prohibitted by
  * bmask: lsm/path_chmod hooks to the security_path_chmod function
@@ -29,10 +33,13 @@ int BPF_PROG(restrict_chmod_other_bits, const struct path *path, umode_t mode,
   if (ret != 0)
     return ret;
 
-  // always allow root
+  // always allow whitelist
   uid = (__u32)bpf_get_current_uid_gid();
-  if (uid == 0)
-    return 0;
+#pragma unroll
+  for (int i = 0; i < ALLOWED_COUNT; i++) {
+    if (whitelist[i] == uid)
+      return 0;
+  }
 
   // deny if the requested chmod mode has any "other" permission bits.
 

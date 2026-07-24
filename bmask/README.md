@@ -22,9 +22,9 @@ BMASK=0007 ./bmask
 
 ## To do and ideas
 
-1. Currently, 
+1. Flexible multi-user whitelist: currently, the whitelist is hardcoded in restrict_chmod.c. A cleaner solution is to use a bpf map and populate it from main.go
 
-## Discussion
+## (currently incomplete) Discussion
 
 Problem: Users can run chmod 777, making their files public to
 all users, and in many cases this is not what they actually want. This is

@@ -50,7 +50,7 @@ func main() {
 	defer lsm.Close()
 
 	log.Println("restrict_chmod LSM program loaded and attached successfully")
-	log.Println("Restricting chmod to deny 'other' permission bits for non-root users")
+	log.Printf("Restricting chmod to deny %04o permission bits for non-whitelisted users\n", bmask)
 
 	// Wait for interrupt signal
 	sigChan := make(chan os.Signal, 1)
