@@ -19,12 +19,17 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 
-#define DEBUG 1
+#define DEBUG 0
 
+// Output debug information, can be read through
+// `cat /sys/kernel/tracing/trace_pipe`
+// or `bpftool prog tracelog`
 #if DEBUG
 #define debug_printk(fmt, args...) bpf_printk(fmt, ##args)
 #else
-#define debug_printk(fmt, args...) do { } while (0)
+#define debug_printk(fmt, args...)                                             \
+    do {                                                                       \
+    } while (0)
 #endif
 
 /** Helper Functions **/
