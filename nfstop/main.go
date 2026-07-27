@@ -43,8 +43,8 @@ func main() {
 	go sw.MaintainInodeResolution(objs.collectorMaps.Events)
 
 	if len(os.Args) > 1 && os.Args[1] == "simple" {
-		simple_render(&sw, &objs)
+		simple_render(sw, &objs)
 	} else {
-		bubble_render(&sw, &objs)
+		bubble_render(sw, &objs)
 	}
 }
