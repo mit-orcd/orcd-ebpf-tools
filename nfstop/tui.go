@@ -178,7 +178,7 @@ func bubble_render(sw *SlidingWindow, objs *collectorObjects) {
 	users_table.SetStyles(s)
 	traffic_table.SetStyles(s)
 
-	m := model{users_table, traffic_table, sw, objs, w, h, help.New()}
+	m := model{users_table, traffic_table, sw, objs, w, h, help.New(), DisplayTotals}
 	if _, err := tea.NewProgram(&m, tea.WithAltScreen()).Run(); err != nil {
 		fmt.Println("Error running program:", err)
 		os.Exit(1)
