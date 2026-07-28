@@ -19,6 +19,7 @@ Retrieve the appropriate BPF Type Format (BTF) dumps for your running kernel:
 ```bash
 bpftool btf dump file /sys/kernel/btf/vmlinux format c > bpf/vmlinux.h
 bpftool btf dump file /sys/kernel/btf/nfsd format c > bpf/nfsd-btf.h
+# if nfsd doesn't exist, you might have not loaded it; try `modprobe nfsd`
 ```
 
 Then generate the needed boilerplate for `go-bpf` and build the viewer:

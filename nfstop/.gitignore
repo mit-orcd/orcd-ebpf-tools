@@ -1,0 +1,8 @@
+.vscode
+
+bpf/*.h
+
+collector_bpfeb.*
+collector_bpfel.*
+
+/nfstop

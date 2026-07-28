@@ -44,7 +44,7 @@ func simple_render(sw *SlidingWindow, objs *collectorObjects) {
 
 			fmt.Printf("\n\n==== LOG ====\n")
 
-			sw.total_summary.UpdateMetrics(objs.NfsOpsCounts)
+			sw.UpdateMetrics(objs.NfsOpsCounts)
 		}
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"log"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/ringbuf"
@@ -27,6 +28,9 @@ type SlidingWindow struct {
 
 	ino_mu           sync.RWMutex
 	ino_to_filenames map[uint64]string
+
+	last_update     time.Time
+	last_interval_s float64
 }
 
 /* Structures to store all aggregated metrics */
@@ -38,26 +42,34 @@ type WindowSummary struct {
 	ordered_ips   []*IpMetrics
 }
 
-func (w *WindowSummary) sortUsers() {
-	// track a grand total of I/O
+func (w *WindowSummary) sortUsers(byRate bool) {
 	var grand_total uint64
+	var grand_rate float64
 
-	// Go over the unsorted array and calculate the grand total of I/O
 	for _, user := range w.users {
 		grand_total += user.usage_total
+		grand_rate += user.usage_rate
 	}
 
 	// TODO: instead of recreating array, just add new users
 	w.ordered_users = make([]*UserMetrics, 0)
 	for _, user := range w.users {
-		// update the user struct to get the % of I/O
-		if grand_total > 0 {
-			user.usage_normalized = float32(user.usage_total) / float32(grand_total)
+		if byRate {
+			if grand_rate > 0 {
+				user.usage_normalized = float32(user.usage_rate) / float32(grand_rate)
+			}
+		} else {
+			if grand_total > 0 {
+				user.usage_normalized = float32(user.usage_total) / float32(grand_total)
+			}
 		}
 		w.ordered_users = append(w.ordered_users, user)
 	}
 
 	slices.SortFunc(w.ordered_users, func(a, b *UserMetrics) int {
+		if byRate {
+			return cmp.Compare(b.usage_rate, a.usage_rate)
+		}
 		return cmp.Compare(b.usage_total, a.usage_total)
 	})
 }
@@ -76,6 +88,7 @@ type InoUidKey struct {
 type UserMetrics struct {
 	files            map[InoIpKey]*FileMetrics
 	usage_total      uint64
+	usage_rate       float64 // bytes/sec in the last collection interval
 	usage_normalized float32
 
 	ordered_files []*FileMetrics
@@ -88,6 +101,9 @@ const (
 	SortByReadBytes FileSortOrder = iota
 	SortByWriteBytes
 	SortByTotalBytes
+	SortByReadRate
+	SortByWriteRate
+	SortByTotalRate
 )
 
 func (um *UserMetrics) sortFiles(orderBy FileSortOrder) {
@@ -104,7 +120,12 @@ func (um *UserMetrics) sortFiles(orderBy FileSortOrder) {
 			return cmp.Compare(b.w_bytes, a.w_bytes)
 		case SortByTotalBytes:
 			return cmp.Compare(b.r_bytes+b.w_bytes, a.r_bytes+a.w_bytes)
-
+		case SortByReadRate:
+			return cmp.Compare(b.r_bytes_rate, a.r_bytes_rate)
+		case SortByWriteRate:
+			return cmp.Compare(b.w_bytes_rate, a.w_bytes_rate)
+		case SortByTotalRate:
+			return cmp.Compare(b.r_bytes_rate+b.w_bytes_rate, a.r_bytes_rate+a.w_bytes_rate)
 		}
 		return cmp.Compare(b.r_bytes+b.w_bytes, a.r_bytes+a.w_bytes)
 	})
@@ -124,9 +145,16 @@ type FileMetrics struct {
 	r_bytes     uint64
 	w_ops_count uint64
 	w_bytes     uint64
-	ino         uint64
-	ip          uint32
-	uid         uint32
+
+	// Per-interval rates (set each collection cycle)
+	r_ops_rate   float64
+	r_bytes_rate float64
+	w_ops_rate   float64
+	w_bytes_rate float64
+
+	ino uint64
+	ip  uint32
+	uid uint32
 }
 
 func InitWindow() SlidingWindow {
@@ -169,13 +197,38 @@ func (sw *SlidingWindow) MaintainInodeResolution(file_ringbuf *ebpf.Map) {
 	}
 }
 
-// Updates window aggregated data given an ebpf map with new data to collect
-func (w *WindowSummary) UpdateMetrics(ebpf_map *ebpf.Map) {
+// UpdateMetrics drains the eBPF map, accumulates totals, and computes
+// per-interval rates based on the elapsed time since the last call.
+func (sw *SlidingWindow) UpdateMetrics(ebpf_map *ebpf.Map) {
+	now := time.Now()
+	elapsed_s := 1.0 // safe default for the very first call
+	if !sw.last_update.IsZero() {
+		elapsed_s = now.Sub(sw.last_update).Seconds()
+		if elapsed_s <= 0 {
+			elapsed_s = 1.0
+		}
+	}
+	sw.last_update = now
+	sw.last_interval_s = elapsed_s
+
+	w := &sw.total_summary
+
+	// Zero out all rate fields so files with no activity this interval show 0.
+	for _, um := range w.users {
+		um.usage_rate = 0
+		for _, fm := range um.files {
+			fm.r_ops_rate = 0
+			fm.r_bytes_rate = 0
+			fm.w_ops_rate = 0
+			fm.w_bytes_rate = 0
+		}
+	}
+
 	iterator := ebpf_map.Iterate()
 
 	var keys []collectorKeyT
 
-	var valtmp collectorValT
+	var valtmp []collectorValT
 	var key collectorKeyT
 	// populate all the keys
 	for iterator.Next(&key, &valtmp) {
@@ -184,13 +237,20 @@ func (w *WindowSummary) UpdateMetrics(ebpf_map *ebpf.Map) {
 
 	// obtain the values corresponding to the keys
 	for _, k := range keys {
-		var val collectorValT
-		if err := ebpf_map.LookupAndDelete(k, &val); err != nil {
+		var perCPUVals []collectorValT
+		if err := ebpf_map.LookupAndDelete(k, &perCPUVals); err != nil {
 			log.Printf("Delete error %v", err)
 			continue
 		}
 
-		//fmt.Printf("UID: %d | Inode: %d | Requests: %d | Total Bytes: %d\n", k.Uid, k.Ino, val.W_requests, val.W_bytes)
+		// Sum values across all CPUs before aggregating
+		var val collectorValT
+		for _, cpuVal := range perCPUVals {
+			val.W_requests += cpuVal.W_requests
+			val.W_bytes += cpuVal.W_bytes
+			val.R_requests += cpuVal.R_requests
+			val.R_bytes += cpuVal.R_bytes
+		}
 
 		/** Add data to user metrics **/
 		user_metrics, ok := w.users[k.Uid]
@@ -202,7 +262,6 @@ func (w *WindowSummary) UpdateMetrics(ebpf_map *ebpf.Map) {
 			user_metrics.uid = k.Uid
 		}
 
-		// Update FileMetrics
 		if user_metrics.files == nil {
 			user_metrics.files = make(map[InoIpKey]*FileMetrics)
 		}
@@ -214,14 +273,23 @@ func (w *WindowSummary) UpdateMetrics(ebpf_map *ebpf.Map) {
 			file_metrics.ip = k.Ipv4
 			file_metrics.uid = k.Uid
 		}
+
+		// Accumulate totals
 		file_metrics.w_ops_count += val.W_requests
 		file_metrics.w_bytes += val.W_bytes
 		file_metrics.r_ops_count += val.R_requests
 		file_metrics.r_bytes += val.R_bytes
 
+		// Set per-interval rates
+		file_metrics.r_ops_rate += float64(val.R_requests) / elapsed_s
+		file_metrics.r_bytes_rate += float64(val.R_bytes) / elapsed_s
+		file_metrics.w_ops_rate += float64(val.W_requests) / elapsed_s
+		file_metrics.w_bytes_rate += float64(val.W_bytes) / elapsed_s
+
 		// Update UserMetrics
 		user_metrics.files[file_ip_key] = file_metrics
 		user_metrics.usage_total += val.W_bytes + val.R_bytes
+		user_metrics.usage_rate += float64(val.W_bytes+val.R_bytes) / elapsed_s
 
 		/** Add data to ip metrics **/
 		ip_metrics, ok := w.ips[k.Ipv4]
@@ -234,7 +302,7 @@ func (w *WindowSummary) UpdateMetrics(ebpf_map *ebpf.Map) {
 			ip_metrics.files = make(map[InoUidKey]*FileMetrics)
 		}
 		file_uid_key := InoUidKey{ino: k.Ino, uid: k.Uid}
-		ip_metrics.files[file_uid_key] = file_metrics // utilize same file_metrics
+		ip_metrics.files[file_uid_key] = file_metrics
 		w.ips[k.Ipv4] = ip_metrics
 	}
 }

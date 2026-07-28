@@ -10,26 +10,29 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// func makeColumns(width int) []table.Column {
-// 	return []table.Column{
-// 		{Title: "USER", Width: width * 5 / 100},
-// 		{Title: "PATH", Width: width * 15 / 100},
-// 		{Title: "READS", Width: width * 5 / 100},
-// 		{Title: "RBYTES", Width: width * 5 / 100},
-// 		{Title: "WRITES", Width: width * 5 / 100},
-// 		{Title: "WBYTES", Width: width * 5 / 100},
-// 	}
-// }
-
-func makeUserColumns(width int) []table.Column {
+func makeUserColumns(width int, mode DisplayMode) []table.Column {
+	ioHeader := "I/O (kB)"
+	if mode == DisplayRates {
+		ioHeader = "I/O (B/s)"
+	}
 	return []table.Column{
 		{Title: "USER", Width: width * 12 / 100},
-		{Title: "I/O (kB)", Width: width * 8 / 100},
+		{Title: ioHeader, Width: width * 10 / 100},
 		{Title: "%", Width: width * 5 / 100},
 	}
 }
 
-func makeTrafficColumnsWithIP(width int) []table.Column {
+func makeTrafficColumnsWithIP(width int, mode DisplayMode) []table.Column {
+	if mode == DisplayRates {
+		return []table.Column{
+			{Title: "PATH HINT", Width: width * 30 / 100},
+			{Title: "IPv4", Width: width * 9 / 100},
+			{Title: "R/s", Width: width * 6 / 100},
+			{Title: "RB/s", Width: width * 9 / 100},
+			{Title: "W/s", Width: width * 6 / 100},
+			{Title: "WB/s", Width: width * 9 / 100},
+		}
+	}
 	return []table.Column{
 		{Title: "PATH HINT", Width: width * 30 / 100},
 		{Title: "IPv4", Width: width * 9 / 100},
@@ -40,6 +43,42 @@ func makeTrafficColumnsWithIP(width int) []table.Column {
 	}
 }
 
+// fmtBytes formats a byte count as a human-readable size string.
+func fmtBytes(b uint64) string {
+	switch {
+	case b >= 1<<30:
+		return fmt.Sprintf("%.1fGB", float64(b)/float64(1<<30))
+	case b >= 1<<20:
+		return fmt.Sprintf("%.1fMB", float64(b)/float64(1<<20))
+	case b >= 1<<10:
+		return fmt.Sprintf("%.1fkB", float64(b)/float64(1<<10))
+	default:
+		return fmt.Sprintf("%dB", b)
+	}
+}
+
+// fmtRate formats a bytes/sec rate as a human-readable string.
+func fmtRate(bps float64) string {
+	switch {
+	case bps >= 1<<30:
+		return fmt.Sprintf("%.1fGB/s", bps/float64(1<<30))
+	case bps >= 1<<20:
+		return fmt.Sprintf("%.1fMB/s", bps/float64(1<<20))
+	case bps >= 1<<10:
+		return fmt.Sprintf("%.1fkB/s", bps/float64(1<<10))
+	default:
+		return fmt.Sprintf("%.0fB/s", bps)
+	}
+}
+
+// fmtOpsRate formats an ops/sec rate.
+func fmtOpsRate(ops float64) string {
+	if ops >= 1000 {
+		return fmt.Sprintf("%.1fk/s", ops/1000)
+	}
+	return fmt.Sprintf("%.1f/s", ops)
+}
+
 func parse_ip(ip uint32) string {
 	var ipBytes [4]byte
 	binary.LittleEndian.PutUint32(ipBytes[:], ip)
@@ -48,54 +87,57 @@ func parse_ip(ip uint32) string {
 }
 
 func (m *model) updateUserTable() {
-	// 1. get users and their metrics from data_window
-	// 2. display it
-	m.user_table.SetColumns(makeUserColumns(m.width))
-	m.user_table.SetHeight(m.height - 4) // subtract space for header/footer/borders
+	m.user_table.SetColumns(makeUserColumns(m.width, m.displayMode))
+	m.user_table.SetHeight(m.height - 4)
 
-	m.sw.total_summary.sortUsers()
+	m.sw.total_summary.sortUsers(m.displayMode == DisplayRates)
 
 	rows := make([]table.Row, 0)
 
 	for _, um := range m.sw.total_summary.ordered_users {
-
-		// uid to username resolution
 		usr := um.uid
 		var username string
 		usrstr := fmt.Sprintf("%d", usr)
 		u, err := user.LookupId(usrstr)
 		if err != nil {
-			// fall back to uid
 			username = usrstr
 		} else {
 			username = u.Username
 		}
 
+		var ioVal string
+		if m.displayMode == DisplayRates {
+			ioVal = fmtRate(um.usage_rate)
+		} else {
+			ioVal = fmtBytes(um.usage_total)
+		}
+
 		r := table.Row{
 			username,
-			fmt.Sprintf("%d", um.usage_total),
-			fmt.Sprintf("%.2f", um.usage_normalized*100),
+			ioVal,
+			fmt.Sprintf("%.1f%%", um.usage_normalized*100),
 		}
 		rows = append(rows, r)
 	}
 
 	m.user_table.SetRows(rows)
-
 }
 
 func (m *model) updateTrafficTableWithIP(uid uint32) {
-	m.traffic_table.SetColumns(makeTrafficColumnsWithIP(m.width))
-	m.traffic_table.SetHeight(m.height - 4) // subtract space for header/footer/borders
+	m.traffic_table.SetColumns(makeTrafficColumnsWithIP(m.width, m.displayMode))
+	m.traffic_table.SetHeight(m.height - 4)
 
 	user_metric := m.sw.total_summary.users[uid]
 
-	user_metric.sortFiles(SortByTotalBytes)
+	if m.displayMode == DisplayRates {
+		user_metric.sortFiles(SortByTotalRate)
+	} else {
+		user_metric.sortFiles(SortByTotalBytes)
+	}
 
 	rows := make([]table.Row, 0)
 
 	for _, file := range user_metric.ordered_files {
-
-		// ino to filename resolution
 		m.sw.ino_mu.RLock()
 		filename, ok := m.sw.ino_to_filenames[file.ino]
 		m.sw.ino_mu.RUnlock()
@@ -103,27 +145,38 @@ func (m *model) updateTrafficTableWithIP(uid uint32) {
 			filename = fmt.Sprintf("%d", file.ino)
 		}
 
-		r := table.Row{
-			filename,
-			parse_ip(file.ip),
-			fmt.Sprintf("%d", file.r_ops_count),
-			fmt.Sprintf("%d", file.r_bytes),
-			fmt.Sprintf("%d", file.w_ops_count),
-			fmt.Sprintf("%d", file.w_bytes),
+		var r table.Row
+		if m.displayMode == DisplayRates {
+			r = table.Row{
+				filename,
+				parse_ip(file.ip),
+				fmtOpsRate(file.r_ops_rate),
+				fmtRate(file.r_bytes_rate),
+				fmtOpsRate(file.w_ops_rate),
+				fmtRate(file.w_bytes_rate),
+			}
+		} else {
+			r = table.Row{
+				filename,
+				parse_ip(file.ip),
+				fmt.Sprintf("%d", file.r_ops_count),
+				fmtBytes(file.r_bytes),
+				fmt.Sprintf("%d", file.w_ops_count),
+				fmtBytes(file.w_bytes),
+			}
 		}
 		rows = append(rows, r)
 	}
 
 	m.traffic_table.SetRows(rows)
-
 }
 
 func (m *model) updateTables() tea.Msg {
 
-	m.user_table.SetColumns(makeUserColumns(m.width))
+	m.user_table.SetColumns(makeUserColumns(m.width, m.displayMode))
 	m.user_table.SetHeight(m.height - 4) // subtract space for header/footer/borders
 
-	m.traffic_table.SetColumns(makeTrafficColumnsWithIP(m.width))
+	m.traffic_table.SetColumns(makeTrafficColumnsWithIP(m.width, m.displayMode))
 	m.traffic_table.SetHeight(m.height - 4) // subtract space for header/footer/borders
 
 	rows_users := make([]table.Row, 0)

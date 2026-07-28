@@ -1,0 +1,4 @@
+*.o
+vmlinux.h
+*_bpfe*
+bmask
