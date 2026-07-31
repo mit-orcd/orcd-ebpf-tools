@@ -2,18 +2,8 @@
 
 This is (the start of) a collection of useful eBPF scripts for instrumenting HPCs 
 
-## Installing eBPF tools
+**nfstop**: a top(1)-like, lightweight tool for analyzing NFS operations and answering questions about client access. It is especially useful for identifying clients that are generating substantial I/O.
 
-You will need to install `bpftrace` and the appropriate Kernel headers on your system. On Red Hat-likes:
+**nfsgraf**: captures client access metrics over a short time interval and prints them to stdout. The output can be parsed as CSV for use as input to Telegraf.
 
-```
-dnf install bpftrace kernel-headers-$(uname -r)
-```
-
-## Design of the scripts
-These scripts are intended to produce output that can be easily scraped by shell tools and forwarded to central collector systems (such as Telegraf). 
-
-## Running the scripts
-You can either run the scripts as standalone scripts (i.e., `./nfsd.bt`) or invoke the `bpftrace` tool (e.g. `bpftrace nfsd.bt`). 
-
-These sample the various tracepoints for a short interval, such that they can be executed on a cron or another similar tool. 
+**bmask**: a block mask tool to prevent regular users from changing file permissions. Our use case is to prevent users from unintentionally granting "other" bits to their files.
