@@ -157,8 +157,8 @@ type FileMetrics struct {
 	uid uint32
 }
 
-func InitWindow() SlidingWindow {
-	sw := SlidingWindow{}
+func InitWindow() *SlidingWindow {
+	sw := &SlidingWindow{}
 	sw.total_summary.users = make(map[uint32]*UserMetrics)
 	sw.total_summary.ips = make(map[uint32]*IpMetrics)
 	sw.ino_to_filenames = make(map[uint64]string)
