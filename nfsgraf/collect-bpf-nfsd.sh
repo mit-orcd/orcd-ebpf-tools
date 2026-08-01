@@ -1,7 +1,8 @@
 #!/bin/bash
 
 format='telegraf'
-bpfscript='/usr/local/sbin/bpf-nfsd.bt'
+# bpfscript='/usr/local/sbin/bpf-nfsd.bt'
+bpfscript='bpftrace/nfsd-clients.bt'
 
 # only used for graphite
 graphiteify() {
