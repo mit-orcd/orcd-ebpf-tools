@@ -3,3 +3,5 @@ vmlinux.h
 *_bpfe*
 bmask
 _build
+
+!_build/result/rpm/bmask-0.1.0-*.el9.x86_64.rpm
