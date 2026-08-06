@@ -24,37 +24,5 @@ BMASK=0007 ./bmask
 
 1. Flexible multi-user whitelist: currently, the whitelist is hardcoded in restrict_chmod.c. A cleaner solution is to use a bpf map and populate it from main.go
 
-## (currently incomplete) Discussion
-
-Problem: Users can run chmod 777, making their files public to
-all users, and in many cases this is not what they actually want. This is
-because Linux implements a Discretionary Access Control.
-
-Kernel Patches, such as HPCFilePermissionHandler
-<https://github.com/mit-llsc/HPCFilePermissionHandler>, exist to counteract this
-by implementing a strict mask; however, maintaining a custom kernel can cause
-excessive maintainability burden.
-
-Linux Security Module (LSM) is a framework that provides a mechanism for various
-security checks to be hooked by new kernel extensions
-<https://docs.kernel.org/admin-guide/LSM/index.html>. This allows security
-modules to use the LSM framework to add their own access-control rules to the
-Linux kernel. For example, SELinux, AppArmor, TOMOYO, and SMACK are secuirty
-modules that implement a Mandatory Access Control (MAC).
-<https://en.wikipedia.org/wiki/Mandatory_access_control#:~:text=Linux%20familyedit>
-
-I think that none of these specifically solve our problem *only*, as in you
-might be able to use them but result in stricter rules. For example, AppArmor is
-profile-based, hence you could make a profile to deny chmod or setattr for all
-in files inside /home; however, this would not only make chmod 777 fail, but
-would make chmod unusuable system-wide.
-
-The SMACK (Simplified Mandatory Access Control Kernel) LSM might be more useful
-for this use case
-<https://www.kernel.org/doc/html/v6.1/admin-guide/LSM/Smack.html>. You might be
-able to prevent other users from accessing files with permissions 777, though
-not explicitly prevent chmod 777 from changing the other bits. 
-
-
 
 
