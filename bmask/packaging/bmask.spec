@@ -1,5 +1,7 @@
 %{!?commit:%global commit 93b6919d60c2707ac95ec1dd14a164e7f4ed38c4}
 %{!?shortcommit:%global shortcommit 93b6919}
+# Go -trimpath prevents find-debuginfo from collecting a usable source list.
+%global _debugsource_packages 0
 
 Name:           bmask
 Version:        0.1.0

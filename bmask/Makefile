@@ -67,11 +67,11 @@ $(SOURCE_ARCHIVE): | $(SOURCES_DIR)
 
 vendor: $(VENDOR_ARCHIVE) ## Download Go modules and create the offline vendor archive.
 
-$(VENDOR_ARCHIVE): | $(SOURCES_DIR)
+$(VENDOR_ARCHIVE): Makefile | $(SOURCES_DIR)
 	@echo "Vendoring Go modules for $(COMMIT)"
 	@tmp="$$(mktemp -d)"; \
 	trap 'rm -rf -- "$$tmp"' EXIT; \
-	git -C "$(REPO_ROOT)" archive "$(COMMIT)" bmask/go.mod bmask/go.sum | tar -x -C "$$tmp"; \
+	git -C "$(REPO_ROOT)" archive "$(COMMIT)" bmask | tar -x -C "$$tmp"; \
 	(cd "$$tmp/bmask" && GOTOOLCHAIN=auto go mod vendor); \
 	tar --sort=name --owner=0 --group=0 --numeric-owner \
 		--mtime="@$(SOURCE_DATE_EPOCH)" -C "$$tmp/bmask" -cf - vendor | \
