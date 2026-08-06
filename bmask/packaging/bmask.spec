@@ -1,11 +1,12 @@
 %{!?commit:%global commit 93b6919d60c2707ac95ec1dd14a164e7f4ed38c4}
 %{!?shortcommit:%global shortcommit 93b6919}
-# Go -trimpath prevents find-debuginfo from collecting a usable source list.
-%global _debugsource_packages 0
+
+# Preserve debuginfo, but do not generate an empty debugsource package.
+%undefine _debugsource_packages
 
 Name:           bmask
 Version:        0.1.0
-Release:        0.1.0git%{shortcommit}%{?dist}
+Release:        %{shortcommit}%{?dist}
 Summary:        Enforce a chmod permission mask using eBPF LSM
 
 License:        MIT
