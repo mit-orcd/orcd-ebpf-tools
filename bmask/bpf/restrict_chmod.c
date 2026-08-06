@@ -8,8 +8,9 @@
 
 char __license[] SEC("license") = "GPL";
 
-// modified from userspace by setting env var BMASK
-const volatile __u32 bmask = 0007;
+// modified from userspace by setting env variables
+const volatile __u32 bmask = 0002;
+const volatile __u32 strict = 0;
 
 // list of allowed uids that can always use chmod
 const __u32 whitelist[] = {0}; // modify as needed
@@ -28,6 +29,12 @@ int BPF_PROG(restrict_chmod_other_bits, const struct path *path, umode_t mode,
              int ret) {
 
   __u32 uid;
+
+  // to do: unstrict mode that doesn't fail as long as new file restrictions
+  // are less than or equal to previous file restrictions
+  // umode_t current_mode = 07777;
+  // struct inode *inode = BPF_CORE_READ(path, dentry, d_inode);
+  // current_mode = BPF_CORE_READ(inode, i_mode) & 07777;
 
   // do nothing if already denied by another LSM
   if (ret != 0)
