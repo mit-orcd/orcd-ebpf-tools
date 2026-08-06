@@ -1,0 +1,3 @@
+# Permission bits that non-whitelisted users may not set.
+# Parsed as an octal number by bmask.
+BMASK=0007

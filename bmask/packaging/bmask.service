@@ -1,0 +1,18 @@
+[Unit]
+Description=Enforce chmod permission mask using eBPF LSM
+Documentation=https://github.com/mit-orcd/orcd-ebpf-tools/tree/main/bmask
+After=local-fs.target
+ConditionPathExists=/sys/kernel/btf/vmlinux
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=/etc/sysconfig/bmask
+ExecStart=/usr/sbin/bmask
+Restart=on-failure
+RestartSec=5s
+LimitMEMLOCK=64M
+
+[Install]
+WantedBy=multi-user.target
+
