@@ -10,11 +10,11 @@ By default BMASK=0002, meaning it will block write permissions to other.
 
 ## Usage as systemd service
 
-The RPM is installed as a systemd service. Download it and install it with `dnf install`
+The RPM sets up bmask as a systemd service. Download it and install it with `dnf install <rpm_package>`
 
 You can access the environment files at `/etc/sysconfig/bmask` and configure BMASK as desired.
 
-Start the service as usual `systemctl enable --now bmask`
+Start the service as usual `systemctl enable --now bmask`.
 
 **Building RPM from source**: `make rpm` (uses build machine environment) or `make mock` (uses mock to build in a fresh chroot)
 
@@ -23,7 +23,6 @@ Start the service as usual `systemctl enable --now bmask`
 Run `make build` to only build the ebpf-go program. 
 
 Then run the program to load into the kernel `BMASK=0002 ./bmask`
-
 
 `make build` is equivalent to:
 ```
