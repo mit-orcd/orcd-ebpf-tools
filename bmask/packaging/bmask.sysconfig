@@ -6,3 +6,4 @@
 # e.g. if uname=0022, and bmask=0007, then `chmod u+x file` will fail
 
 BMASK=0002
+STRICT=0
