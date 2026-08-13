@@ -61,6 +61,10 @@ go test ./...
 
 %post
 %systemd_post bmask.service
+# echo message only on install (not upgrade)
+if [ "$1" -eq 1 ]; then
+  echo "bmask installed. Configure /etc/sysconfig/bmask and then run: systemctl enable --now bmask.service" >&2
+fi
 
 %preun
 %systemd_preun bmask.service
