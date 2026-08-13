@@ -27,6 +27,7 @@ SEC("lsm/path_chmod")
 int BPF_PROG(restrict_chmod_other_bits, const struct path *path, umode_t mode,
              int ret) {
 
+  bpf_printk("Hooked to lsm/path_chmod.");
   // do nothing if already denied by another LSM
   if (ret != 0)
     return ret;
@@ -46,10 +47,17 @@ int BPF_PROG(restrict_chmod_other_bits, const struct path *path, umode_t mode,
   // with bmask=002) strict: deny if resulting permissions are blocked (e.g. 644
   // -> 744 is not allowed with bmask=002)
   if (strict == 0 && (mode & ~current_mode & bmask)) {
+    bpf_printk("NONSTRICT (%u): new_mode=%o, current_mode=%o, bmask=%o", strict,
+               mode, current_mode, bmask);
     return -EPERM;
   } else if (mode & bmask) {
+    bpf_printk("STRICT (%u): new_mode=%o, current_mode=%o, bmask=%o", strict,
+               mode, current_mode, bmask);
     return -EPERM;
   }
+
+  bpf_printk("VALID: strict=%u: new_mode=%o, current_mode=%o, bmask=%o", strict,
+             mode, current_mode, bmask);
 
   return 0;
 }
