@@ -1,0 +1,9 @@
+# Permission bits that non-whitelisted users may not set.
+# Parsed as an octal number by bmask.
+
+# Note that bmask will fail loudly
+# User may see unexpected behavior if change non blocked bits, but current file perms have the blocked bits set
+# e.g. if uname=0022, and bmask=0007, then `chmod u+x file` will fail
+
+BMASK=0002
+STRICT=0
