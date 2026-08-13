@@ -18,7 +18,8 @@ func main() {
 		log.Fatalf("Failed to load eBPF spec: %v", err)
 	}
 
-	bmask := uint32(0o007)
+	// get BMASK environment variable and update it in the program
+	bmask := uint32(0o002)
 	if s, ok := os.LookupEnv("BMASK"); ok {
 		parsed, err := strconv.ParseUint(s, 8, 32)
 		if err != nil {
@@ -31,6 +32,22 @@ func main() {
 		log.Fatalf("Failed to set bmask: %v", err)
 	} else {
 		log.Printf("Correctly set bmask to %04o", bmask)
+	}
+
+	// get STRICT environment variable and udpate it in the program
+	strict := uint32(0)
+	if s, ok := os.LookupEnv("STRICT"); ok {
+		parsed, err := strconv.ParseUint(s, 10, 32)
+		if err != nil {
+			log.Fatalf("Invalid STRICT value %q: %v", s, err)
+		}
+		strict = uint32(parsed)
+	}
+
+	if err := spec.Variables["strict"].Set(strict); err != nil {
+		log.Fatalf("Failed to set strict: %v", err)
+	} else {
+		log.Printf("Correctly set strict to %v", strict)
 	}
 
 	// Load eBPF objects compiled from restrict_chmod.c
