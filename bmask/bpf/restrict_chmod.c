@@ -27,7 +27,7 @@ SEC("lsm/path_chmod")
 int BPF_PROG(restrict_chmod_other_bits, const struct path *path, umode_t mode,
              int ret) {
 
-  bpf_printk("Hooked to lsm/path_chmod.");
+  bpf_printk("Hooked to lsm/path_chmod.\n");
   // do nothing if already denied by another LSM
   if (ret != 0)
     return ret;
@@ -42,22 +42,40 @@ int BPF_PROG(restrict_chmod_other_bits, const struct path *path, umode_t mode,
 
   struct inode *inode = BPF_CORE_READ(path, dentry, d_inode);
   umode_t current_mode = BPF_CORE_READ(inode, i_mode) & 07777;
+  umode_t mode_delta = (mode ^ current_mode) & mode;
 
-  // nonstrict: deny if ALTERED bits are blocked (e.g. 644 -> 744 is allowed
-  // with bmask=002) strict: deny if resulting permissions are blocked (e.g. 644
-  // -> 744 is not allowed with bmask=002)
-  if (strict == 0 && (mode & ~current_mode & bmask)) {
-    bpf_printk("NONSTRICT (%u): new_mode=%o, current_mode=%o, bmask=%o", strict,
-               mode, current_mode, bmask);
-    return -EPERM;
-  } else if (mode & bmask) {
-    bpf_printk("STRICT (%u): new_mode=%o, current_mode=%o, bmask=%o", strict,
-               mode, current_mode, bmask);
-    return -EPERM;
+  /*
+  strict: always make sure the end permission does not contain bits in bmask
+      `chmod u+x <file>` fails with BMASK=0007, UMASK=0022 (744 & 007 != 0)
+  nonstrict: only check with the permission bits that changed (mode_delta)
+      `chmod u+x <file>` succeeds with BMASK=0007, UMASK=0022 (100 & 007 == 0)
+  */
+
+  switch (strict) {
+  default:
+
+    if (mode_delta & bmask) {
+      // bpf_printk("NONSTRICT: new_mode=%u, current_mode=%u, bmask=%u\n", mode,
+      //            current_mode, bmask);
+      // bpf_printk("NONSTRICT values: xor=%u, delta_mode=%u, res=%u\n",
+      //            mode ^ current_mode, mode_delta, mode_delta & bmask);
+
+      return -EPERM;
+    }
+
+    break;
+
+  case 1:
+    if (mode & bmask) {
+      // bpf_printk("STRICT: new_mode=%u, current_mode=%u, bmask=%u\n", mode,
+      //            current_mode, bmask);
+      return -EPERM;
+    }
+    break;
   }
 
-  bpf_printk("VALID: strict=%u: new_mode=%o, current_mode=%o, bmask=%o", strict,
-             mode, current_mode, bmask);
+  bpf_printk("VALID: new_mode=%u, current_mode=%u, bmask=%u\n", mode,
+             current_mode, bmask);
 
   return 0;
 }
